@@ -43,4 +43,13 @@ ENV/
 
 # System Files
 .DS_Store
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.npm
+.yarn-integrity
+package-lock.json
+yarn.lock
 Thumbs.db
