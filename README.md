@@ -2,15 +2,15 @@
 
 Una aplicación web moderna de autenticación construida con **FastAPI** (backend) y **Next.js** (frontend), implementando un sistema completo de gestión de usuarios con autenticación JWT, panel de administración y diseño responsivo.
 
-## 📋 Tabla de Contenidos
+## Uso de Inteligencia Artificial
 
-- [Características](#-características)
-- [Arquitectura del Sistema](#-arquitectura-del-sistema)
-- [Tecnologías Utilizadas](#-tecnologías-utilizadas)
-- [Instalación y Configuración](#-instalación-y-configuración)
-- [Uso de la Aplicación](#-uso-de-la-aplicación)
-- [Documentación de APIs](#-documentación-de-apis)
-- [Estructura del Proyecto](#-estructura-del-proyecto)
+Sí se utilizó Inteligencia Artificial (IA) durante el desarrollo del proyecto, específicamente para comprender el funcionamiento del algoritmo PBKDF2 y su implementación en Python. Los siguientes fueron los prompts utilizados:
+
+* **Prompt 1**: *¿Qué es PBKDF2? - ANÁLISIS*
+* **Prompt 2**: *¿Cómo podemos implementar el algoritmo PBKDF2 para el hashing de contraseñas en Python? - ANÁLISIS*
+* **Prompt 3**: *¿Qué es salt, cómo se utiliza? - ANÁLISIS*
+
+La información obtenida nos permitió aplicar buenas prácticas de seguridad en el almacenamiento de contraseñas, utilizando salt y múltiples iteraciones para mitigar ataques de fuerza bruta.
 
 ## ✨ Características
 
@@ -251,18 +251,145 @@ login-backend-main/
 ```
 
 
-Este proyecto está abierto a contribuciones. Para contribuir:
+## Implementación de Seguridad
 
-1. **Fork** el repositorio
-2. **Crea** una rama para tu feature (`git checkout -b feature/AmazingFeature`)
-3. **Commit** tus cambios (`git commit -m 'Add some AmazingFeature'`)
-4. **Push** a la rama (`git push origin feature/AmazingFeature`)
-5. **Abre** un Pull Request
+### Hashing de Contraseñas con PBKDF2
 
-### 📄 Licencia
+La seguridad de las contraseñas es fundamental en cualquier sistema de autenticación. Implementamos **PBKDF2 (Password-Based Key Derivation Function 2)** que es un estándar recomendado por NIST para el almacenamiento seguro de contraseñas.
 
-Este proyecto está bajo la licencia MIT. Ver el archivo `LICENSE` para más detalles.
+```python
+from passlib.hash import pbkdf2_sha256
 
----
+def hash_password(password: str, salt: str) -> str:
+    return pbkdf2_sha256.hash(password + salt)
 
-**Desarrollado con ❤️ usando FastAPI y Next.js**
+def verify_password(plain_password: str, salt: str, hashed_password: str) -> bool:
+    return pbkdf2_sha256.verify(plain_password + salt, hashed_password)
+```
+
+**Ventajas del PBKDF2:**
+- **Resistencia a ataques de fuerza bruta**: Utiliza un número configurable de iteraciones que hace computacionalmente costoso probar múltiples contraseñas
+- **Protección contra rainbow tables**: Al usar salt único para cada contraseña, previene ataques con tablas precalculadas
+- **Estándar probado**: Es un algoritmo aprobado por organismos de seguridad internacionales
+
+###  Sistema de Salt Criptográfico
+
+Cada contraseña utiliza un **salt único** generado criptográficamente:
+
+```python
+def create_salt() -> str:
+    return secrets.token_hex(16)
+```
+
+El salt se genera usando el módulo `secrets` de Python, que proporciona números aleatorios criptográficamente seguros. Esto garantiza que:
+- **Cada contraseña tiene un salt único**: Incluso si dos usuarios tienen la misma contraseña, sus hashes serán completamente diferentes
+- **Prevención de ataques rainbow table**: Las tablas precalculadas de hashes no sirven contra contraseñas con salt
+- **Aleatoriedad criptográfica**: El salt es impredecible y no puede ser reproducido
+
+### Autenticación basada en JWT (JSON Web Tokens)
+
+Para la gestión de sesiones, implementamos **JWT** que ofrece una autenticación stateless y segura:
+
+```python
+def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
+    to_encode = data.copy()
+    if expires_delta:
+        expire = datetime.utcnow() + expires_delta
+    else:
+        expire = datetime.utcnow() + timedelta(minutes=15)
+    to_encode.update({"exp": expire})
+    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    return encoded_jwt
+```
+
+**Características de seguridad del JWT implementado:**
+- **Expiración automática**: Los tokens tienen un tiempo de vida limitado (24 horas)
+- **Clave secreta segura**: Generada aleatoriamente en cada ejecución del programa
+- **Algoritmo HS256**: Utiliza HMAC con SHA-256 para la firma digital
+- **Verificación de integridad**: Cualquier modificación del token lo invalida automáticamente
+
+###  Control de Acceso y Autorización
+
+El sistema implementa un control de acceso robusto con diferentes niveles de permisos:
+
+```python
+async def get_current_admin(current_user: models.User = Depends(get_current_user)):
+    if not current_user.is_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="No tienes permisos suficientes",
+        )
+    return current_user
+```
+
+**Niveles de seguridad implementados:**
+- **Autenticación**: Verificación de identidad mediante token JWT
+- **Autorización**: Verificación de permisos según el tipo de usuario
+- **Administrador único**: Solo el primer usuario registrado obtiene permisos de administrador
+- **Protección de rutas**: Las operaciones administrativas requieren permisos especiales
+
+### Seguridad en el Manejo de Tiempo
+
+Para el registro de última conexión, implementamos manejo seguro de zonas horarias:
+
+```python
+# Guardar hora en UTC con tzinfo  
+current_time = datetime.now(timezone.utc).replace(microsecond=0)
+user.last_login = current_time
+```
+
+Esto previene problemas de seguridad relacionados con:
+- **Manipulación de tiempo**: Almacenamiento en UTC previene confusiones de zona horaria
+- **Consistencia**: Todos los registros de tiempo siguen el mismo estándar
+- **Auditoría**: Facilita el seguimiento preciso de actividades de usuario
+
+## Dificultades Encontradas
+
+###  Manejo de Zonas Horarias
+Una de las principales dificultades fue el manejo correcto de las zonas horarias para el registro de última conexión. Inicialmente, los timestamps se almacenaban como "naive datetime" sin información de zona horaria, lo que causaba inconsistencias.
+
+**Solución implementada:**
+- Almacenamiento en UTC en la base de datos
+- Conversión a zona horaria local (Colombia) solo para visualización
+- Verificación de `tzinfo` antes de realizar conversiones
+
+###  Gestión de la Clave Secreta JWT
+El manejo de la clave secreta para JWT presentó desafíos de seguridad. Usar una clave fija sería inseguro, pero generar una nueva en cada reinicio invalida todos los tokens existentes.
+
+**Solución adoptada:**
+- Generación de clave aleatoria en cada ejecución
+- Los usuarios deben volver a autenticarse después de reiniciar el servidor
+- Esto mejora la seguridad a costa de una menor persistencia de sesión
+
+## Conclusiones
+
+### Aspectos Positivos Logrados
+
+ **Seguridad Robusta**: La implementación de PBKDF2 con salt único garantiza que las contraseñas estén protegidas contra los ataques más comunes (fuerza bruta, rainbow tables, etc.)
+
+ **Arquitectura Modular**: La separación en módulos especializados (security, models, schemas) facilita el mantenimiento y permite futuras expansiones del sistema
+
+ **Autenticación Moderna**: El uso de JWT proporciona una autenticación stateless que escala bien y es compatible con aplicaciones web modernas
+
+ **Control de Acceso Granular**: La diferenciación entre usuarios comunes y administradores permite un control fino de permisos
+
+### Lecciones Aprendidas
+
+ **Importancia del Salt**: Sin salt, incluso PBKDF2 sería vulnerable a ataques de rainbow table. La combinación de ambos es esencial
+
+ **Manejo de Tiempo**: Los sistemas de autenticación requieren un manejo cuidadoso del tiempo, especialmente cuando se involucran múltiples zonas horarias
+
+ **Balance Seguridad-Usabilidad**: Decisiones como la duración de los tokens JWT requieren balancear seguridad (tiempo corto) con experiencia de usuario (tiempo largo)
+
+### Recomendaciones para Mejoras Futuras
+
+ **Refresh Tokens**: Implementar tokens de renovación para mejorar la experiencia de usuario sin comprometer la seguridad
+
+ **Rate Limiting**: Agregar limitación de intentos de login para prevenir ataques de fuerza bruta
+
+ **Logging de Seguridad**: Implementar un sistema de logs para auditoría de eventos de seguridad
+
+ **Validación de Políticas de Contraseña**: Agregar requisitos mínimos para la complejidad de contraseñas
+
+El proyecto demuestra que es posible implementar un sistema de autenticación seguro siguiendo las mejores prácticas de la industria, utilizando herramientas modernas y estándares probados de seguridad.
+
